@@ -3,17 +3,17 @@ import torch.nn as nn
 from torch.nn import functional as F
 
 # Hyperparameters – not learned by model
-batch_size = 64 # Sequences to process in parallel
-block_size = 256 # Maxmimum context length for predictions
+batch_size = 16 # Sequences to process in parallel
+block_size = 32 # Maxmimum context length for predictions
 max_iters = 5000 # Iterations for transformer
-eval_interval = 500 # Interval for evaluation of loss
-learning_rate = 3e-4
+eval_interval = 100 # Interval for evaluation of loss
+learning_rate = 1e-3
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200 # Iterations for evaluation
-n_embd = 384 # Embedding dimension for input
-n_head = 6 # Number of heads in each multi-head attention block
-n_layer = 6 # Number of self-attention layers
-dropout = 0.2 # Avoid overfitting
+n_embd = 64 # Embedding dimension for input
+n_head = 4 # Number of heads in each multi-head attention block
+n_layer = 4 # Number of self-attention layers
+dropout = 0.0 # Avoid overfitting
 
 torch.manual_seed(1337)
 
@@ -76,12 +76,13 @@ class Head(nn.Module):
         k = self.key(x)
         q = self.query(x)
         # Computing attention scores -> affinities between different variables
-        attention = q @ k.transpose(-2, -1) * k.shape[-1]**-0.5 # Returns BTT
+        attention = q @ k.transpose(-2, -1) * C**-0.5 # Returns BTT
         attention = attention.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # Masking future values
         attention = F.softmax(attention, dim=-1) # Softmaxing values to maximumize and normalize
         attention = self.dropout(attention)
         v = self.value(x)
-        return attention @ v # Generating final attention matrix
+        out = attention @ v # Generating final attention matrix
+        return out
 
 class MultiHeadAttention(nn.Module):
     # Creating multiple heads of self-attention in parallel
@@ -135,16 +136,6 @@ class GPTLanguageModel(nn.Module):
         self.blocks = nn.Sequential(*[Block(n_embd, n_head=n_head) for _ in range(n_layer)]) # Creates multiple self-attention layers
         self.ln_f = nn.LayerNorm(n_embd) # Normalization layer
         self.lm_head = nn.Linear(n_embd, vocab_size) # Maps output to probability distribution
-        
-        self.apply(self._init_weights) # TO LEARN
-    
-    def _init_weights(self, module):
-        if isinstance(module, nn.Linear):
-            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-            if module.bias is not None:
-                torch.nn.init.zeros_(module.bias)
-        elif isinstance(module, nn.Embedding):
-            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def forward(self, idx, targets=None):
         B, T = idx.shape
@@ -179,6 +170,7 @@ class GPTLanguageModel(nn.Module):
 model = GPTLanguageModel()
 print("Here we go!")
 m = model.to(device)
+print(sum(p.numel() for p in m.parameters())/1e6, 'M parameters')
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate) # PyTorch optimizer
 
 for iter in range(max_iters):
